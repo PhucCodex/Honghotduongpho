@@ -1,10 +1,17 @@
 // Nạp các thư viện
 require('dotenv').config(); // Để đọc file .env
-const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
+// THAY ĐỔI 1: Thêm 'Events' để sửa lỗi 'ready'
+const { Client, GatewayIntentBits, EmbedBuilder, Events } = require('discord.js');
 const Parser = require('rss-parser');
 
-// Khởi tạo trình phân tích RSS
-const parser = new Parser();
+// THAY ĐỔI 2: Khởi tạo parser với User-Agent (để sửa lỗi 403)
+const parser = new Parser({
+    requestOptions: {
+        headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36'
+        }
+    }
+});
 
 // Lấy thông tin từ file .env
 const TOKEN = process.env.DISCORD_TOKEN;
@@ -23,8 +30,8 @@ const client = new Client({
     ]
 });
 
-// Sự kiện khi bot sẵn sàng
-client.on('ready', () => {
+// THAY ĐỔI 3: Sử dụng 'Events.ClientReady' thay vì chuỗi 'ready'
+client.on(Events.ClientReady, () => {
     console.log(`✅ Đã đăng nhập với tên ${client.user.tag}!`);
     console.log(`Bắt đầu theo dõi RSS Feed: ${RSS_FEED_URL}`);
     
@@ -35,11 +42,12 @@ client.on('ready', () => {
     setInterval(checkFeed, CHECK_INTERVAL);
 });
 
-// Hàm kiểm tra RSS Feed (Đã cập nhật: đăng ngay bài đầu tiên)
+// Hàm kiểm tra RSS Feed
 async function checkFeed() {
     console.log('Đang kiểm tra tin mới...');
     try {
         // 1. Tải và phân tích RSS feed
+        // Dòng này sẽ tự động dùng User-Agent chúng ta đã cài đặt ở trên
         const feed = await parser.parseURL(RSS_FEED_URL);
         
         if (!feed.items || feed.items.length === 0) {
@@ -49,8 +57,6 @@ async function checkFeed() {
 
         // 2. Lấy bài đăng mới nhất
         const latestPost = feed.items[0];
-        
-        // Dùng 'guid' (Global Unique ID) hoặc 'link' làm mã định danh
         const postGUID = latestPost.guid || latestPost.link;
 
         // 3. Kiểm tra xem bài đăng này có khác với bài đã lưu hay không
@@ -77,24 +83,21 @@ async function checkFeed() {
                 if (description.length > 400) {
                     description = description.slice(0, 400) + '...';
                 }
-                description = `> ** ${description.replace(/\n/g, '\n > ')}**`;
-
+                
+                // Tô đậm description
+                description = `**${description}**`;
 
                 // --- (QUAN TRỌNG) CỐ GẮNG TÌM HÌNH ẢNH (ĐÃ NÂNG CẤP) ---
                 let imageUrl = null;
 
-                // Cách 1: Thử 'enclosure' (chuẩn nhất cho media)
                 if (latestPost.enclosure && latestPost.enclosure.url) {
                     imageUrl = latestPost.enclosure.url;
                 }
-                // Cách 2: Thử 'media:content' (chuẩn media RSS)
                 else if (latestPost['media:content'] && latestPost['media:content']['$'] && latestPost['media:content']['$'].url) {
                     imageUrl = latestPost['media:content']['$'].url;
                 }
-                // Cách 3: (FALLBACK) Tìm thẻ <img> đầu tiên trong nội dung
                 else {
                     const content = latestPost.content || latestPost.contentSnippet || '';
-                    // Dùng regex để tìm src="URL"
                     const regex = /<img[^>]+src="([^"]+)"/;
                     const match = content.match(regex);
                     
@@ -108,34 +111,33 @@ async function checkFeed() {
 
                 const embed = new EmbedBuilder()
                     .setAuthor({
-                        name: 'Hóng Hớt Đường Phố',
+                        name: feed.title || 'Hóng Hớt Đường Phố',
                         iconURL: feed.image ? feed.image.url : 'https://files.catbox.moe/rd0pgw.png', // Icon mặc định
                         url: feed.link || latestPost.link
                     })
                     .setTitle(latestPost.title || '🔥 BIẾN NÓNG HỔI! 🔥')
                     .setURL(latestPost.link)
-                    .setDescription(description)
-                    .setColor('#FF4500') // Màu cam/đỏ
+                    .setDescription(description) 
+                    .setColor('#FF4500') 
                     .addFields(
-                        { name: '<a:animated_clock:1431849815590961252> Thời Gian Đăng', value: discordTimestamp, inline: true },
-                        { name: '<:Link:1431849713338159258> Xem Chi Tiết', value: `[Click Vào Đây](${latestPost.link})`, inline: true }
+                        { name: '⏰ Thời gian đăng', value: discordTimestamp, inline: true },
+                        { name: '🔗 Xem chi tiết', value: `[Click vào đây](${latestPost.link})`, inline: true }
                     )
                     .setTimestamp(postDate)
                     .setFooter({ 
-                        text: `Hóng Hớt Đường Phố`,
+                        text: `Tin được hóng bởi ${client.user.username}`,
                         iconURL: client.user.displayAvatarURL()
                     });
 
-                // Chỉ thêm hình ảnh nếu tìm thấy URL
                 if (imageUrl) {
-                    embed.setImage(imageUrl); // Đây là hình ảnh lớn của bài post
+                    embed.setImage(imageUrl); 
                 }
                 
                 // --- KẾT THÚC PHẦN EMBED ĐẸP ---
 
                 // Gửi tin nhắn
                 await channel.send({ 
-                    content: `# <a:hvtm_alertred:1431848651868868689> **CÓ BIẾN MỚI!** <a:hvtm_orangealert:1431848628795740221>`,
+                    content: `📣 **CÓ BIẾN MỚI!** 📣`,
                     embeds: [embed] 
                 });
                 
